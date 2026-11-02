@@ -36,7 +36,13 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   const { email, password } = req.body;
 
+  // 1. Validar campos obligatorios
+  if (!email || !password) {
+    return res.status(400).json({ mensaje: 'Email y contraseña son obligatorios' });
+  }
+
   try {
+    // 2. Buscar usuario en la BD
     const userQuery = await pool.query('SELECT * FROM usuarios WHERE email = $1', [email]);
     if (userQuery.rows.length === 0) {
       return res.status(400).json({ mensaje: 'Credenciales inválidas' });
@@ -44,19 +50,27 @@ const login = async (req, res) => {
 
     const usuario = userQuery.rows[0];
 
-    // Comparar hash de bcryptjs
+    // 3. Validar si la cuenta está activa
+    if (usuario.estado !== 'ACTIVO') {
+      return res.status(403).json({ mensaje: 'Cuenta inactiva o pendiente de aprobación' });
+    }
+
+    // 4. Comparar hash de contraseña
     const isMatch = await comparePassword(password, usuario.password_hash);
     if (!isMatch) {
       return res.status(400).json({ mensaje: 'Credenciales inválidas' });
     }
 
-    // Generar Token JWT
-    const token = jwt.sign(
-      { id: usuario.id, rol: usuario.rol, unidad_id: usuario.unidad_id },
-      process.env.JWT_SECRET,
-      { expiresIn: '8h' }
-    );
+    // 5. Firmar Token JWT (duración 8h)
+    const payload = {
+      id: usuario.id,
+      rol: usuario.rol,
+      unidad_id: usuario.unidad_id
+    };
 
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '8h' });
+
+    // 6. Enviar respuesta con JWT e información del usuario
     res.json({
       mensaje: 'Inicio de sesión exitoso',
       token,
@@ -70,8 +84,8 @@ const login = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error en login:', error);
-    res.status(500).json({ mensaje: 'Error en el servidor' });
+    console.error('Error en POST /api/auth/login:', error);
+    res.status(500).json({ mensaje: 'Error interno del servidor' });
   }
 };
 
