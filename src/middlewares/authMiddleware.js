@@ -1,6 +1,13 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
 
+const ROLES_VALIDOS = new Set([
+  'DIRECTOR',
+  'CONSEJERO',
+  'SECRETARIA',
+  'CONQUISTADOR'
+]);
+
 const requireAuth = async (req, res, next) => {
   const authorization = req.get('authorization') || '';
   const match = authorization.match(/^Bearer\s+(\S+)$/i);
@@ -28,7 +35,7 @@ const requireAuth = async (req, res, next) => {
 
   try {
     const [sessions] = await pool.execute(
-      `SELECT 1
+      `SELECT u.rol
        FROM sesiones s
        JOIN usuarios u ON u.id = s.usuario_id
        WHERE s.jti = ?
@@ -45,7 +52,8 @@ const requireAuth = async (req, res, next) => {
 
     req.auth = {
       userId: claims.id,
-      jti: claims.jti
+      jti: claims.jti,
+      rol: sessions[0].rol
     };
 
     return next();
@@ -55,4 +63,29 @@ const requireAuth = async (req, res, next) => {
   }
 };
 
+const requireRole = (...rolesPermitidos) => {
+  const roles = rolesPermitidos.flat();
+
+  if (roles.length === 0 || roles.some((rol) => !ROLES_VALIDOS.has(rol))) {
+    throw new TypeError(
+      `requireRole necesita uno o más roles válidos: ${[...ROLES_VALIDOS].join(', ')}`
+    );
+  }
+
+  return (req, res, next) => {
+    if (!req.auth) {
+      return res.status(401).json({ mensaje: 'Se requiere autenticación para acceder a este recurso' });
+    }
+
+    if (!roles.includes(req.auth.rol)) {
+      return res.status(403).json({ mensaje: 'No tenés permisos para acceder a este recurso' });
+    }
+
+    return next();
+  };
+};
+
+// Mantiene requireAuth como exportación principal y permite importar requireRole por nombre.
 module.exports = requireAuth;
+module.exports.requireAuth = requireAuth;
+module.exports.requireRole = requireRole;
