@@ -13,6 +13,11 @@ const swaggerDocument = {
       description: 'Servidor Local de Desarrollo'
     }
   ],
+  components: {
+    securitySchemes: {
+      bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }
+    }
+  },
   paths: {
     '/api/auth/solicitar-cuenta': {
       post: {
@@ -66,6 +71,57 @@ const swaggerDocument = {
         responses: {
           200: { description: 'Inicio de sesión exitoso, retorna el JWT y los datos del usuario' },
           400: { description: 'Credenciales inválidas' },
+          500: { description: 'Error interno del servidor' }
+        }
+      }
+    },
+    '/api/auth/me': {
+      get: {
+        summary: 'Consultar el perfil del usuario autenticado',
+        tags: ['Autenticación'],
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: 'Perfil, unidad, clase y especialidades' },
+          401: { description: 'Token inválido, vencido o sesión cerrada' },
+          500: { description: 'Error interno del servidor' }
+        }
+      },
+      patch: {
+        summary: 'Actualizar datos personales del usuario autenticado',
+        tags: ['Autenticación'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  nombre_completo: { type: 'string', maxLength: 150 },
+                  email: { type: 'string', format: 'email', maxLength: 150 },
+                  fecha_nacimiento: { type: 'string', format: 'date', nullable: true }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: { description: 'Perfil actualizado' },
+          400: { description: 'Datos inválidos o campos no editables' },
+          401: { description: 'Token inválido, vencido o sesión cerrada' },
+          409: { description: 'El email ya está registrado' },
+          500: { description: 'Error interno del servidor' }
+        }
+      }
+    },
+    '/api/auth/sesiones': {
+      delete: {
+        summary: 'Cerrar la sesión actual y revocar su JWT',
+        tags: ['Autenticación'],
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: 'Sesión cerrada' },
+          401: { description: 'Token inválido, vencido o sesión cerrada' },
           500: { description: 'Error interno del servidor' }
         }
       }
