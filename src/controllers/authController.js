@@ -34,41 +34,52 @@ const register = async (req, res) => {
 
 // Iniciar Sesión
 const login = async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body || {};
+  const emailLimpio = typeof email === 'string' ? email.trim() : '';
 
-  // 1. Validar campos obligatorios
-  if (!email || !password) {
+  // Validar los tipos y campos obligatorios antes de consultar la base de datos.
+  if (!emailLimpio || emailLimpio.length > 150 || typeof password !== 'string' || password.length === 0) {
     return res.status(400).json({ mensaje: 'Email y contraseña son obligatorios' });
   }
 
   try {
-    // 2. Buscar usuario en la BD
-    const userQuery = await pool.query('SELECT * FROM usuarios WHERE email = $1', [email]);
+    // Buscar solo los datos necesarios para autenticar y responder.
+    const userQuery = await pool.query(
+      `SELECT id, nombre_completo, email, password_hash, rol, unidad_id, clase_actual_id, estado
+       FROM usuarios
+       WHERE email = $1`,
+      [emailLimpio]
+    );
     if (userQuery.rows.length === 0) {
       return res.status(400).json({ mensaje: 'Credenciales inválidas' });
     }
 
     const usuario = userQuery.rows[0];
 
-    // 3. Validar si la cuenta está activa
-    if (usuario.estado !== 'ACTIVO') {
-      return res.status(403).json({ mensaje: 'Cuenta inactiva o pendiente de aprobación' });
-    }
-
-    // 4. Comparar hash de contraseña
+    // Comprobar la contraseña antes de informar el estado de la cuenta.
     const isMatch = await comparePassword(password, usuario.password_hash);
     if (!isMatch) {
       return res.status(400).json({ mensaje: 'Credenciales inválidas' });
     }
 
-    // 5. Firmar Token JWT (duración 8h)
+    if (usuario.estado !== 'ACTIVO') {
+      return res.status(403).json({ mensaje: 'Cuenta inactiva o pendiente de aprobación' });
+    }
+
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret || Buffer.byteLength(jwtSecret, 'utf8') < 32) {
+      console.error('JWT_SECRET no está configurado o tiene menos de 32 bytes');
+      return res.status(500).json({ mensaje: 'Error interno del servidor' });
+    }
+
+    // Firmar token JWT con una duración de 8 horas.
     const payload = {
       id: usuario.id,
       rol: usuario.rol,
       unidad_id: usuario.unidad_id
     };
 
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '8h' });
+    const token = jwt.sign(payload, jwtSecret, { expiresIn: '8h' });
 
     // 6. Enviar respuesta con JWT e información del usuario
     res.json({
