@@ -1,8 +1,8 @@
 -- Recrea el esquema completo. No ejecutar sobre una base con datos que se quieran conservar.
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS avisos, asistencia, recursos_biblioteca, especialidades_usuario,
-  progreso_cuadernillo, requisitos, solicitudes_registro, sesiones, usuarios,
-  especialidades, clases, unidades;
+DROP TABLE IF EXISTS eventos, avisos, asistencia, recursos_biblioteca, especialidades_usuario,
+  progreso_lectura_biblica, progreso_cuadernillo, requisitos, categorias_cuadernillo, cuadernillos,
+  solicitudes_registro, sesiones, usuarios, especialidades, clases, unidades;
 SET FOREIGN_KEY_CHECKS = 1;
 
 CREATE TABLE unidades (
@@ -17,6 +17,26 @@ CREATE TABLE clases (
     nombre VARCHAR(50) NOT NULL,
     color_insignia VARCHAR(20),
     UNIQUE KEY uq_clases_nombre (nombre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE cuadernillos (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    clase_id INT NOT NULL,
+    tipo ENUM('REGULAR', 'AVANZADA') NOT NULL,
+    UNIQUE KEY uq_cuadernillos_clase_tipo (clase_id, tipo),
+    CONSTRAINT fk_cuadernillos_clase
+      FOREIGN KEY (clase_id) REFERENCES clases(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE categorias_cuadernillo (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    cuadernillo_id INT NOT NULL,
+    nombre VARCHAR(150) NOT NULL,
+    orden INT NOT NULL,
+    UNIQUE KEY uq_categorias_cuadernillo_nombre (cuadernillo_id, nombre),
+    UNIQUE KEY uq_categorias_cuadernillo_orden (cuadernillo_id, orden),
+    CONSTRAINT fk_categorias_cuadernillo
+      FOREIGN KEY (cuadernillo_id) REFERENCES cuadernillos(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE especialidades (
@@ -72,19 +92,18 @@ CREATE TABLE solicitudes_registro (
 
 CREATE TABLE requisitos (
     id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    clase_id INT,
-    categoria VARCHAR(50) NOT NULL,
+    categoria_id INT NOT NULL,
     numero_item INT NOT NULL,
     descripcion TEXT NOT NULL,
-    UNIQUE KEY uq_requisitos_clase_categoria_item (clase_id, categoria, numero_item),
-    CONSTRAINT fk_requisitos_clase
-      FOREIGN KEY (clase_id) REFERENCES clases(id) ON DELETE CASCADE
+    UNIQUE KEY uq_requisitos_categoria_numero (categoria_id, numero_item),
+    CONSTRAINT fk_requisitos_categoria
+      FOREIGN KEY (categoria_id) REFERENCES categorias_cuadernillo(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE progreso_cuadernillo (
     id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    usuario_id INT,
-    requisito_id INT,
+    usuario_id INT NOT NULL,
+    requisito_id INT NOT NULL,
     fecha_firma TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     evaluador_id INT,
     UNIQUE KEY uq_progreso_usuario_requisito (usuario_id, requisito_id),
@@ -94,6 +113,18 @@ CREATE TABLE progreso_cuadernillo (
       FOREIGN KEY (requisito_id) REFERENCES requisitos(id) ON DELETE CASCADE,
     CONSTRAINT fk_progreso_evaluador
       FOREIGN KEY (evaluador_id) REFERENCES usuarios(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE progreso_lectura_biblica (
+    usuario_id INT NOT NULL,
+    requisito_id INT NOT NULL,
+    referencia VARCHAR(120) NOT NULL,
+    fecha_completado TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (usuario_id, requisito_id, referencia),
+    CONSTRAINT fk_lectura_biblica_usuario
+      FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+    CONSTRAINT fk_lectura_biblica_requisito
+      FOREIGN KEY (requisito_id) REFERENCES requisitos(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE especialidades_usuario (
@@ -149,5 +180,24 @@ CREATE TABLE avisos (
     CONSTRAINT fk_avisos_unidad
       FOREIGN KEY (unidad_id) REFERENCES unidades(id) ON DELETE CASCADE,
     CONSTRAINT fk_avisos_autor
+      FOREIGN KEY (autor_id) REFERENCES usuarios(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE eventos (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(150) NOT NULL,
+    descripcion TEXT,
+    fecha_inicio DATETIME NOT NULL,
+    fecha_fin DATETIME,
+    lugar VARCHAR(180),
+    unidad_id INT,
+    estado ENUM('BORRADOR', 'PUBLICADO', 'CANCELADO') NOT NULL DEFAULT 'PUBLICADO',
+    autor_id INT,
+    creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_eventos_estado_fecha (estado, fecha_inicio),
+    KEY idx_eventos_unidad_fecha (unidad_id, fecha_inicio),
+    CONSTRAINT fk_eventos_unidad
+      FOREIGN KEY (unidad_id) REFERENCES unidades(id) ON DELETE CASCADE,
+    CONSTRAINT fk_eventos_autor
       FOREIGN KEY (autor_id) REFERENCES usuarios(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
