@@ -290,13 +290,19 @@ const actualizarPerfil = async (req, res) => {
   const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
     ? req.body
     : {};
-  const camposPermitidos = ['nombre_completo', 'email', 'fecha_nacimiento'];
+  const camposPermitidos = [
+    'nombre_completo',
+    'email',
+    'fecha_nacimiento',
+    'password_actual',
+    'password_nueva'
+  ];
   const campoPresente = (campo) => Object.prototype.hasOwnProperty.call(body, campo);
   const campoNoPermitido = Object.keys(body).some((campo) => !camposPermitidos.includes(campo));
 
   if (campoNoPermitido) {
     return res.status(400).json({
-      mensaje: 'Solo se pueden modificar nombre_completo, email y fecha_nacimiento'
+      mensaje: 'Solo se pueden modificar datos personales o cambiar la contraseña'
     });
   }
 
@@ -363,6 +369,56 @@ const actualizarPerfil = async (req, res) => {
     }
 
     agregarActualizacion('fecha_nacimiento', fecha);
+  }
+
+  const solicitaCambioPassword =
+    campoPresente('password_actual') || campoPresente('password_nueva');
+
+  if (solicitaCambioPassword) {
+    const passwordActual = body.password_actual;
+    const passwordNueva = body.password_nueva;
+
+    if (typeof passwordActual !== 'string' || !passwordActual) {
+      return res.status(400).json({ mensaje: 'Ingresá tu contraseña actual' });
+    }
+
+    if (typeof passwordNueva !== 'string') {
+      return res.status(400).json({ mensaje: 'Ingresá una nueva contraseña' });
+    }
+
+    if (passwordNueva.length < 8 || Buffer.byteLength(passwordNueva, 'utf8') > 72) {
+      return res.status(400).json({
+        mensaje: 'La nueva contraseña debe tener al menos 8 caracteres y hasta 72 bytes'
+      });
+    }
+
+    try {
+      const [usuarios] = await pool.execute(
+        'SELECT password_hash FROM usuarios WHERE id = ? AND estado = \'ACTIVO\'',
+        [req.auth.userId]
+      );
+
+      if (usuarios.length === 0) {
+        return res.status(404).json({ mensaje: 'Usuario no encontrado' });
+      }
+
+      const passwordCoincide = await comparePassword(passwordActual, usuarios[0].password_hash);
+      if (!passwordCoincide) {
+        return res.status(400).json({ mensaje: 'La contraseña actual no es correcta' });
+      }
+
+      const passwordNuevaEsLaMisma = await comparePassword(passwordNueva, usuarios[0].password_hash);
+      if (passwordNuevaEsLaMisma) {
+        return res.status(400).json({
+          mensaje: 'La nueva contraseña debe ser distinta de la actual'
+        });
+      }
+
+      agregarActualizacion('password_hash', await hashPassword(passwordNueva));
+    } catch (error) {
+      console.error('Error al validar el cambio de contraseña:', error);
+      return res.status(500).json({ mensaje: 'Error interno del servidor' });
+    }
   }
 
   if (actualizaciones.length === 0) {

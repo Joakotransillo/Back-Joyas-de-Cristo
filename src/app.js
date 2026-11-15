@@ -7,6 +7,8 @@ const db = require('./config/db');
 
 // Rutas
 const authRoutes = require('./routes/authRoutes');
+const conquisRoutes = require('./routes/conquisRoutes');
+const consejeroRoutes = require('./routes/consejeroRoutes');
 
 const app = express();
 app.use(cors());
@@ -17,6 +19,8 @@ app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // Endpoints
 app.use('/api/auth', authRoutes);
+app.use('/api/conquis', conquisRoutes);
+app.use('/api/consejero', consejeroRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
