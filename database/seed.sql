@@ -173,6 +173,18 @@ SELECT
   (SELECT id FROM clases WHERE nombre = 'Guía' LIMIT 1),
   'ACTIVO';
 
+-- Consejero de prueba de la unidad Amatista (la contraseña prevista es Consejero123!).
+-- Sirve para probar el panel de unidad y la evaluación del sábado; quitarlo antes de usar el sistema con el club.
+INSERT IGNORE INTO usuarios
+  (nombre_completo, email, password_hash, rol, unidad_id, estado)
+SELECT
+  'Consejero de Prueba',
+  'consejero.prueba@joyasdecristo.com',
+  '$2b$10$zjE0L1SWeHi6sftIdf3GzevkAn//EG2f2DU/sNeF1Dbx0xcOuLVp.',
+  'CONSEJERO',
+  (SELECT id FROM unidades WHERE nombre = 'Amatista' LIMIT 1),
+  'ACTIVO';
+
 -- Preguntas de EJEMPLO para probar la pantalla de especialidades.
 -- Reemplazar por el texto oficial del manual de especialidades antes de usar el sistema con el club.
 INSERT IGNORE INTO preguntas_especialidad (especialidad_id, numero, pregunta, desarrollo)
