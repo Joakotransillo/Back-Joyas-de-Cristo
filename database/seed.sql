@@ -4,7 +4,7 @@ INSERT IGNORE INTO clases (nombre, color_insignia) VALUES
 ('Amigo', '#1E40AF'),
 ('Compañero', '#DC2626'),
 ('Explorador', '#166534'),
-('Pionero', '#65A30D'),
+('Pionero', '#6B7280'),
 ('Excursionista', '#7C3AED'),
 ('Guía', '#CA8A04');
 
@@ -172,3 +172,16 @@ SELECT
   (SELECT id FROM unidades WHERE nombre = 'Amatista' LIMIT 1),
   (SELECT id FROM clases WHERE nombre = 'Guía' LIMIT 1),
   'ACTIVO';
+
+-- Preguntas de EJEMPLO para probar la pantalla de especialidades.
+-- Reemplazar por el texto oficial del manual de especialidades antes de usar el sistema con el club.
+INSERT IGNORE INTO preguntas_especialidad (especialidad_id, numero, pregunta, desarrollo)
+SELECT e.id, p.numero, p.pregunta, p.desarrollo
+FROM especialidades e
+JOIN (
+  SELECT 1 AS numero, '(Ejemplo) Definir los términos básicos de una cuerda: chicote, seno y firme.' AS pregunta,
+         '(Ejemplo) Chicote: el extremo libre de la cuerda. Seno: la curva que se forma al doblarla. Firme: la parte que queda sin trabajar.' AS desarrollo
+  UNION ALL SELECT 2, '(Ejemplo) Hacer y explicar el uso de diez nudos.', NULL
+  UNION ALL SELECT 3, '(Ejemplo) Construir un objeto útil usando amarras.', NULL
+) AS p
+WHERE e.nombre = 'Nudos y Amarres';

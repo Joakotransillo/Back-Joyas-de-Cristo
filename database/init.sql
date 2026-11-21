@@ -1,6 +1,6 @@
 -- Recrea el esquema completo. No ejecutar sobre una base con datos que se quieran conservar.
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS eventos, avisos, asistencia, recursos_biblioteca, especialidades_usuario,
+DROP TABLE IF EXISTS eventos, avisos, asistencia, recursos_biblioteca, preguntas_especialidad, especialidades_usuario,
   progreso_lectura_biblica, progreso_cuadernillo, requisitos, categorias_cuadernillo, cuadernillos,
   solicitudes_registro, sesiones, usuarios, especialidades, clases, unidades;
 SET FOREIGN_KEY_CHECKS = 1;
@@ -42,9 +42,23 @@ CREATE TABLE categorias_cuadernillo (
 CREATE TABLE especialidades (
     id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     nombre VARCHAR(100) NOT NULL,
+    codigo VARCHAR(20) NULL,
     categoria VARCHAR(50) NOT NULL,
     insignia_url VARCHAR(255),
-    UNIQUE KEY uq_especialidades_nombre_categoria (nombre, categoria)
+    UNIQUE KEY uq_especialidades_nombre_categoria (nombre, categoria),
+    UNIQUE KEY uq_especialidades_codigo (codigo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- El desarrollo es material para consejeros: la API solo lo envía a CONSEJERO y DIRECTOR.
+CREATE TABLE preguntas_especialidad (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    especialidad_id INT NOT NULL,
+    numero INT NOT NULL,
+    pregunta TEXT NOT NULL,
+    desarrollo TEXT NULL,
+    UNIQUE KEY uq_preguntas_especialidad_numero (especialidad_id, numero),
+    CONSTRAINT fk_preguntas_especialidad
+      FOREIGN KEY (especialidad_id) REFERENCES especialidades(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE usuarios (
