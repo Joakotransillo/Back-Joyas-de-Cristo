@@ -1,129 +1,141 @@
 const pool = require('../config/db');
 const { extraerReferenciasBiblicas } = require('../utils/lecturasBiblicas');
 
-const obtenerCuadernillo = async (req, res) => {
-  try {
-    const [filas] = await pool.execute(
-      `SELECT
-        u.id AS usuario_id,
-        c.id AS clase_id,
-        c.nombre AS clase_nombre,
-        c.color_insignia,
-        b.id AS cuadernillo_id,
-        b.tipo AS cuadernillo_tipo,
-        categoria.id AS categoria_id,
-        categoria.nombre AS categoria_nombre,
-        categoria.orden AS categoria_orden,
-        requisito.id AS requisito_id,
-        requisito.numero_item,
-        requisito.descripcion,
-        progreso.id AS progreso_id,
-        progreso.fecha_firma
-      FROM usuarios AS u
-      LEFT JOIN clases AS c
-        ON c.id = u.clase_actual_id
-      LEFT JOIN cuadernillos AS b
-        ON b.clase_id = c.id
-      LEFT JOIN categorias_cuadernillo AS categoria
-        ON categoria.cuadernillo_id = b.id
-      LEFT JOIN requisitos AS requisito
-        ON requisito.categoria_id = categoria.id
-      LEFT JOIN progreso_cuadernillo AS progreso
-        ON progreso.requisito_id = requisito.id
-       AND progreso.usuario_id = u.id
-      WHERE u.id = ?
-        AND u.estado = 'ACTIVO'
-      ORDER BY
-        CASE b.tipo WHEN 'REGULAR' THEN 1 WHEN 'AVANZADA' THEN 2 ELSE 3 END,
-        categoria.orden,
-        requisito.numero_item`,
-      [req.auth.userId]
-    );
+/**
+ * Arma el cuadernillo de la clase actual de un usuario, con sus firmas y lecturas.
+ * Devuelve { status, cuerpo } para que lo usen el conquistador y su consejero.
+ */
+const construirCuadernillo = async (usuarioId) => {
+  const [filas] = await pool.execute(
+    `SELECT
+      u.id AS usuario_id,
+      c.id AS clase_id,
+      c.nombre AS clase_nombre,
+      c.color_insignia,
+      b.id AS cuadernillo_id,
+      b.tipo AS cuadernillo_tipo,
+      categoria.id AS categoria_id,
+      categoria.nombre AS categoria_nombre,
+      categoria.orden AS categoria_orden,
+      requisito.id AS requisito_id,
+      requisito.numero_item,
+      requisito.descripcion,
+      progreso.id AS progreso_id,
+      progreso.fecha_firma
+    FROM usuarios AS u
+    LEFT JOIN clases AS c
+      ON c.id = u.clase_actual_id
+    LEFT JOIN cuadernillos AS b
+      ON b.clase_id = c.id
+    LEFT JOIN categorias_cuadernillo AS categoria
+      ON categoria.cuadernillo_id = b.id
+    LEFT JOIN requisitos AS requisito
+      ON requisito.categoria_id = categoria.id
+    LEFT JOIN progreso_cuadernillo AS progreso
+      ON progreso.requisito_id = requisito.id
+     AND progreso.usuario_id = u.id
+    WHERE u.id = ?
+      AND u.estado = 'ACTIVO'
+    ORDER BY
+      CASE b.tipo WHEN 'REGULAR' THEN 1 WHEN 'AVANZADA' THEN 2 ELSE 3 END,
+      categoria.orden,
+      requisito.numero_item`,
+    [usuarioId]
+  );
 
-    if (filas.length === 0) {
-      return res.status(404).json({ mensaje: 'No se encontró el usuario autenticado' });
-    }
+  if (filas.length === 0) {
+    return { status: 404, cuerpo: { mensaje: 'No se encontró el usuario' } };
+  }
 
-    const primeraFila = filas[0];
-    if (primeraFila.clase_id === null) {
-      return res.status(409).json({ mensaje: 'El usuario no tiene una clase asignada' });
-    }
+  const primeraFila = filas[0];
+  if (primeraFila.clase_id === null) {
+    return { status: 409, cuerpo: { mensaje: 'El usuario no tiene una clase asignada' } };
+  }
 
-    const [lecturas] = await pool.execute(
-      `SELECT requisito_id, referencia
-       FROM progreso_lectura_biblica
-       WHERE usuario_id = ?`,
-      [req.auth.userId]
-    );
-    const lecturasPorRequisito = new Map();
-    for (const lectura of lecturas) {
-      const referencias = lecturasPorRequisito.get(lectura.requisito_id) || [];
-      referencias.push(lectura.referencia);
-      lecturasPorRequisito.set(lectura.requisito_id, referencias);
-    }
+  const [lecturas] = await pool.execute(
+    `SELECT requisito_id, referencia
+     FROM progreso_lectura_biblica
+     WHERE usuario_id = ?`,
+    [usuarioId]
+  );
+  const lecturasPorRequisito = new Map();
+  for (const lectura of lecturas) {
+    const referencias = lecturasPorRequisito.get(lectura.requisito_id) || [];
+    referencias.push(lectura.referencia);
+    lecturasPorRequisito.set(lectura.requisito_id, referencias);
+  }
 
-    const cuadernillosPorId = new Map();
+  const cuadernillosPorId = new Map();
 
-    for (const fila of filas) {
-      if (fila.cuadernillo_id === null) continue;
+  for (const fila of filas) {
+    if (fila.cuadernillo_id === null) continue;
 
-      if (!cuadernillosPorId.has(fila.cuadernillo_id)) {
-        cuadernillosPorId.set(fila.cuadernillo_id, {
-          id: fila.cuadernillo_id,
-          tipo: fila.cuadernillo_tipo,
-          categorias: [],
-          categoriasPorId: new Map()
-        });
-      }
-
-      const cuadernillo = cuadernillosPorId.get(fila.cuadernillo_id);
-      if (fila.categoria_id === null) continue;
-
-      if (!cuadernillo.categoriasPorId.has(fila.categoria_id)) {
-        const categoria = {
-          id: fila.categoria_id,
-          nombre: fila.categoria_nombre,
-          orden: fila.categoria_orden,
-          requisitos: []
-        };
-        cuadernillo.categoriasPorId.set(fila.categoria_id, categoria);
-        cuadernillo.categorias.push(categoria);
-      }
-
-      if (fila.requisito_id === null) continue;
-
-      const referenciasLectura = fila.categoria_nombre === 'II. Descubrimiento Espiritual'
-        && Number(fila.numero_item) === 3
-        ? extraerReferenciasBiblicas(fila.descripcion)
-        : [];
-
-      cuadernillo.categoriasPorId.get(fila.categoria_id).requisitos.push({
-        id: fila.requisito_id,
-        numero_item: fila.numero_item,
-        descripcion: fila.descripcion,
-        completado: fila.progreso_id !== null,
-        firmado: fila.progreso_id !== null,
-        fecha_firma: fila.fecha_firma,
-        referencias_lectura: referenciasLectura,
-        lecturas_completadas: (lecturasPorRequisito.get(fila.requisito_id) || [])
-          .filter((referencia) => referenciasLectura.includes(referencia))
+    if (!cuadernillosPorId.has(fila.cuadernillo_id)) {
+      cuadernillosPorId.set(fila.cuadernillo_id, {
+        id: fila.cuadernillo_id,
+        tipo: fila.cuadernillo_tipo,
+        categorias: [],
+        categoriasPorId: new Map()
       });
     }
 
-    const cuadernillos = [...cuadernillosPorId.values()].map(({ categoriasPorId, ...cuadernillo }) => cuadernillo);
+    const cuadernillo = cuadernillosPorId.get(fila.cuadernillo_id);
+    if (fila.categoria_id === null) continue;
 
-    if (cuadernillos.length === 0) {
-      return res.status(404).json({ mensaje: 'No hay cuadernillos cargados para la clase actual' });
+    if (!cuadernillo.categoriasPorId.has(fila.categoria_id)) {
+      const categoria = {
+        id: fila.categoria_id,
+        nombre: fila.categoria_nombre,
+        orden: fila.categoria_orden,
+        requisitos: []
+      };
+      cuadernillo.categoriasPorId.set(fila.categoria_id, categoria);
+      cuadernillo.categorias.push(categoria);
     }
 
-    return res.json({
+    if (fila.requisito_id === null) continue;
+
+    const referenciasLectura = fila.categoria_nombre === 'II. Descubrimiento Espiritual'
+      && Number(fila.numero_item) === 3
+      ? extraerReferenciasBiblicas(fila.descripcion)
+      : [];
+
+    cuadernillo.categoriasPorId.get(fila.categoria_id).requisitos.push({
+      id: fila.requisito_id,
+      numero_item: fila.numero_item,
+      descripcion: fila.descripcion,
+      completado: fila.progreso_id !== null,
+      firmado: fila.progreso_id !== null,
+      fecha_firma: fila.fecha_firma,
+      referencias_lectura: referenciasLectura,
+      lecturas_completadas: (lecturasPorRequisito.get(fila.requisito_id) || [])
+        .filter((referencia) => referenciasLectura.includes(referencia))
+    });
+  }
+
+  const cuadernillos = [...cuadernillosPorId.values()].map(({ categoriasPorId, ...cuadernillo }) => cuadernillo);
+
+  if (cuadernillos.length === 0) {
+    return { status: 404, cuerpo: { mensaje: 'No hay cuadernillos cargados para la clase actual' } };
+  }
+
+  return {
+    status: 200,
+    cuerpo: {
       clase: {
         id: primeraFila.clase_id,
         nombre: primeraFila.clase_nombre,
         color_insignia: primeraFila.color_insignia
       },
       cuadernillos
-    });
+    }
+  };
+};
+
+const obtenerCuadernillo = async (req, res) => {
+  try {
+    const { status, cuerpo } = await construirCuadernillo(req.auth.userId);
+    return res.status(status).json(cuerpo);
   } catch (error) {
     console.error('Error en GET /api/conquis/cuadernillo:', error);
     return res.status(500).json({ mensaje: 'Error interno del servidor' });
@@ -206,4 +218,4 @@ const actualizarLecturaBiblica = async (req, res) => {
   }
 };
 
-module.exports = { obtenerCuadernillo, actualizarLecturaBiblica };
+module.exports = { construirCuadernillo, obtenerCuadernillo, actualizarLecturaBiblica };

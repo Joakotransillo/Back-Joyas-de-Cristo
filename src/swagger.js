@@ -177,6 +177,70 @@ const swaggerDocument = {
           500: { description: 'Error interno del servidor' }
         }
       }
+    },
+    '/api/consejero/evaluar': {
+      post: {
+        summary: 'Registrar la aprobación presencial de requisitos',
+        description: 'Cada entrada asocia un conquistador con uno o más requisitos aprobados. Se admiten varios conquistadores en una operación para evaluar a la unidad; todos deben pertenecer a la unidad del consejero y cada requisito debe corresponder a la clase actual del conquistador. La operación es atómica.',
+        tags: ['Consejeros'],
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['evaluaciones'],
+                properties: {
+                  evaluaciones: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: 200,
+                    items: {
+                      type: 'object',
+                      required: ['conquistador_id', 'requisitos_ids'],
+                      properties: {
+                        conquistador_id: { type: 'integer', minimum: 1 },
+                        requisitos_ids: {
+                          type: 'array',
+                          minItems: 1,
+                          maxItems: 100,
+                          uniqueItems: true,
+                          items: { type: 'integer', minimum: 1 }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: {
+            description: 'Evaluaciones registradas',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    mensaje: { type: 'string' },
+                    conquistadores_evaluados: { type: 'integer' },
+                    firmas_creadas: { type: 'integer' },
+                    ya_firmados: { type: 'integer' }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'Solicitud inválida, requisito inexistente o de otra clase' },
+          401: { description: 'Falta un token válido o la sesión está vencida' },
+          403: { description: 'El usuario no tiene el rol de consejero' },
+          404: { description: 'No se encontró el consejero o uno de los conquistadores no pertenece a su unidad' },
+          409: { description: 'El consejero no tiene unidad o uno de los conquistadores no tiene clase' },
+          500: { description: 'Error interno del servidor' }
+        }
+      }
     }
   }
 };
