@@ -1,6 +1,6 @@
 const express = require('express');
 const { requireAuth, requireRole } = require('../middlewares/authMiddleware');
-const { listarSolicitudes, obtenerCatalogo, responderSolicitud } = require('../controllers/directorController');
+const { listarSolicitudes, obtenerCatalogo, responderSolicitud, obtenerMetricas } = require('../controllers/directorController');
 
 const router = express.Router();
 
@@ -9,6 +9,7 @@ const soloAdministracion = [requireAuth, requireRole('DIRECTOR', 'SECRETARIA')];
 
 router.get('/solicitudes', ...soloAdministracion, listarSolicitudes);
 router.get('/catalogo', ...soloAdministracion, obtenerCatalogo);
+router.get('/metricas', ...soloAdministracion, obtenerMetricas);
 router.patch('/solicitudes/:id/responder', ...soloAdministracion, responderSolicitud);
 
 module.exports = router;
