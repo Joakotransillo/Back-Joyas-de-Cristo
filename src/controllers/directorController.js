@@ -199,4 +199,281 @@ const responderSolicitud = async (req, res) => {
   }
 };
 
-module.exports = { listarSolicitudes, obtenerCatalogo, responderSolicitud };
+const promedio = (valores) => (valores.length
+  ? Math.round(valores.reduce((suma, valor) => suma + valor, 0) / valores.length)
+  : 0);
+
+/**
+ * GET /api/director/metricas
+ * Resumen del club en tiempo real: totales, avance por unidad y por clase,
+ * y asistencia de los últimos sábados cargados.
+ */
+const obtenerMetricas = async (req, res) => {
+  try {
+    // Avance de cada conquistador activo sobre los requisitos de su clase (regular y avanzada).
+    const [conquistadores] = await pool.execute(
+      `SELECT
+        c.id, c.unidad_id, c.clase_actual_id,
+        COUNT(DISTINCT r.id) AS total,
+        COUNT(DISTINCT CASE WHEN p.id IS NOT NULL THEN r.id END) AS firmados
+      FROM usuarios AS c
+      LEFT JOIN cuadernillos AS b ON b.clase_id = c.clase_actual_id
+      LEFT JOIN categorias_cuadernillo AS cat ON cat.cuadernillo_id = b.id
+      LEFT JOIN requisitos AS r ON r.categoria_id = cat.id
+      LEFT JOIN progreso_cuadernillo AS p ON p.requisito_id = r.id AND p.usuario_id = c.id
+      WHERE c.rol = 'CONQUISTADOR' AND c.estado = 'ACTIVO'
+      GROUP BY c.id, c.unidad_id, c.clase_actual_id`
+    );
+    const avances = conquistadores.map((fila) => ({
+      unidadId: fila.unidad_id,
+      claseId: fila.clase_actual_id,
+      tieneRequisitos: Number(fila.total) > 0,
+      porcentaje: Number(fila.total) > 0 ? Math.round((Number(fila.firmados) / Number(fila.total)) * 100) : 0
+    }));
+
+    const [unidades] = await pool.execute(
+      `SELECT u.id, u.nombre,
+        (SELECT GROUP_CONCAT(k.nombre_completo ORDER BY k.nombre_completo SEPARATOR ', ')
+         FROM usuarios AS k
+         WHERE k.unidad_id = u.id AND k.rol = 'CONSEJERO' AND k.estado = 'ACTIVO') AS consejeros
+      FROM unidades AS u
+      ORDER BY u.nombre`
+    );
+    const [clases] = await pool.execute(
+      `SELECT cl.id, cl.nombre, cl.color_insignia,
+        (SELECT COUNT(*) FROM cuadernillos AS b
+         JOIN categorias_cuadernillo AS cat ON cat.cuadernillo_id = b.id
+         JOIN requisitos AS r ON r.categoria_id = cat.id
+         WHERE b.clase_id = cl.id) AS requisitos_cargados
+      FROM clases AS cl
+      ORDER BY cl.id`
+    );
+
+    const resumirGrupo = (lista) => {
+      const conRequisitos = lista.filter((item) => item.tieneRequisitos);
+      return {
+        conquistadores: lista.length,
+        avance_promedio: promedio(conRequisitos.map((item) => item.porcentaje)),
+        con_requisitos: conRequisitos.length
+      };
+    };
+
+    const [[contadores]] = await pool.execute(
+      `SELECT
+        (SELECT COUNT(*) FROM usuarios WHERE rol = 'CONSEJERO' AND estado = 'ACTIVO') AS consejeros,
+        (SELECT COUNT(*) FROM solicitudes_registro WHERE estado = 'PENDIENTE') AS solicitudes_pendientes,
+        (SELECT COUNT(*) FROM especialidades_usuario AS eu
+         JOIN usuarios AS u ON u.id = eu.usuario_id AND u.estado = 'ACTIVO') AS especialidades_completadas,
+        (SELECT COUNT(*) FROM progreso_cuadernillo) AS requisitos_firmados`
+    );
+
+    // Últimos 8 días con asistencia cargada, del más viejo al más nuevo.
+    const [asistencia] = await pool.execute(
+      `SELECT * FROM (
+        SELECT DATE_FORMAT(a.fecha, '%Y-%m-%d') AS fecha,
+          COUNT(*) AS registrados,
+          SUM(a.presente) AS presentes,
+          SUM(a.puntualidad) AS puntualidad,
+          SUM(a.biblia) AS biblia,
+          SUM(a.uniforme) AS uniforme,
+          SUM(a.cuota) AS cuota
+        FROM asistencia AS a
+        JOIN usuarios AS u ON u.id = a.usuario_id AND u.rol = 'CONQUISTADOR' AND u.estado = 'ACTIVO'
+        GROUP BY a.fecha
+        ORDER BY a.fecha DESC
+        LIMIT 8
+      ) AS ultimas
+      ORDER BY fecha ASC`
+    );
+
+    const totalConquistadores = avances.length;
+    const sinUnidad = avances.filter((item) => item.unidadId === null);
+
+    return res.json({
+      totales: {
+        conquistadores: totalConquistadores,
+        consejeros: Number(contadores.consejeros),
+        unidades: unidades.length,
+        solicitudes_pendientes: Number(contadores.solicitudes_pendientes),
+        especialidades_completadas: Number(contadores.especialidades_completadas),
+        requisitos_firmados: Number(contadores.requisitos_firmados),
+        avance_promedio: resumirGrupo(avances).avance_promedio
+      },
+      por_unidad: [
+        ...unidades.map((unidad) => ({
+          id: unidad.id,
+          nombre: unidad.nombre,
+          consejeros: unidad.consejeros ? unidad.consejeros.split(', ') : [],
+          ...resumirGrupo(avances.filter((item) => item.unidadId === unidad.id))
+        })),
+        ...(sinUnidad.length ? [{ id: null, nombre: 'Sin unidad', consejeros: [], ...resumirGrupo(sinUnidad) }] : [])
+      ],
+      por_clase: clases.map((clase) => ({
+        id: clase.id,
+        nombre: clase.nombre,
+        color_insignia: clase.color_insignia,
+        requisitos_cargados: Number(clase.requisitos_cargados),
+        ...resumirGrupo(avances.filter((item) => item.claseId === clase.id))
+      })),
+      asistencia: asistencia.map((dia) => {
+        const registrados = Number(dia.registrados);
+        const presentes = Number(dia.presentes);
+        const porcentajeDe = (valor) => (presentes ? Math.round((Number(valor) / presentes) * 100) : 0);
+        return {
+          fecha: dia.fecha,
+          registrados,
+          presentes,
+          porcentaje_presentes: registrados ? Math.round((presentes / registrados) * 100) : 0,
+          // Sobre los presentes: de los que vinieron, cuántos llegaron puntuales, con Biblia, etc.
+          puntualidad: porcentajeDe(dia.puntualidad),
+          biblia: porcentajeDe(dia.biblia),
+          uniforme: porcentajeDe(dia.uniforme),
+          cuota: porcentajeDe(dia.cuota)
+        };
+      })
+    });
+  } catch (error) {
+    console.error('Error en GET /api/director/metricas:', error);
+    return res.status(500).json({ mensaje: 'Error interno del servidor' });
+  }
+};
+
+const ROLES = ['CONQUISTADOR', 'CONSEJERO', 'SECRETARIA', 'DIRECTOR'];
+const ESTADOS = ['ACTIVO', 'INACTIVO'];
+
+const usuarioPublico = (fila) => ({
+  id: fila.id,
+  nombre_completo: fila.nombre_completo,
+  email: fila.email,
+  fecha_nacimiento: fila.fecha_nacimiento,
+  rol: fila.rol,
+  estado: fila.estado,
+  unidad: fila.unidad_id === null ? null : { id: fila.unidad_id, nombre: fila.unidad_nombre },
+  clase: fila.clase_id === null ? null : { id: fila.clase_id, nombre: fila.clase_nombre, color_insignia: fila.color_insignia }
+});
+
+const CONSULTA_USUARIOS = `
+  SELECT u.id, u.nombre_completo, u.email, u.fecha_nacimiento, u.rol, u.estado,
+    un.id AS unidad_id, un.nombre AS unidad_nombre,
+    cl.id AS clase_id, cl.nombre AS clase_nombre, cl.color_insignia
+  FROM usuarios AS u
+  LEFT JOIN unidades AS un ON un.id = u.unidad_id
+  LEFT JOIN clases AS cl ON cl.id = u.clase_actual_id`;
+
+/**
+ * GET /api/director/usuarios
+ * Todo el personal y los conquistadores del club, activos e inactivos.
+ */
+const listarUsuarios = async (req, res) => {
+  try {
+    const [filas] = await pool.execute(
+      `${CONSULTA_USUARIOS}
+       ORDER BY FIELD(u.rol, 'DIRECTOR', 'SECRETARIA', 'CONSEJERO', 'CONQUISTADOR'), u.nombre_completo, u.id`
+    );
+    return res.json({ usuarios: filas.map(usuarioPublico) });
+  } catch (error) {
+    console.error('Error en GET /api/director/usuarios:', error);
+    return res.status(500).json({ mensaje: 'Error interno del servidor' });
+  }
+};
+
+/**
+ * PATCH /api/director/usuarios/:id
+ * Body (todos opcionales): { rol, unidad_id, clase_id, estado }
+ * Cambia el rol, la unidad, la clase o el estado de un integrante.
+ * No permite cambiarse el propio rol ni darse de baja, para no quedar afuera.
+ * Al pasar a INACTIVO se cierran sus sesiones abiertas.
+ */
+const editarUsuario = async (req, res) => {
+  const usuarioId = Number(req.params.id);
+  if (!Number.isSafeInteger(usuarioId) || usuarioId < 1) {
+    return res.status(400).json({ mensaje: 'El identificador del usuario no es válido' });
+  }
+  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+  const permitidos = ['rol', 'unidad_id', 'clase_id', 'estado'];
+  if (Object.keys(body).length === 0 || Object.keys(body).some((campo) => !permitidos.includes(campo))) {
+    return res.status(400).json({ mensaje: 'Indicá qué cambiar: rol, unidad_id, clase_id o estado' });
+  }
+  if (body.rol !== undefined && !ROLES.includes(body.rol)) {
+    return res.status(400).json({ mensaje: 'El rol no es válido' });
+  }
+  if (body.estado !== undefined && !ESTADOS.includes(body.estado)) {
+    return res.status(400).json({ mensaje: 'El estado debe ser ACTIVO o INACTIVO' });
+  }
+  const unidadId = body.unidad_id === undefined ? undefined : parsearIdOpcional(body.unidad_id);
+  const claseId = body.clase_id === undefined ? undefined : parsearIdOpcional(body.clase_id);
+  if (Number.isNaN(unidadId) || Number.isNaN(claseId)) {
+    return res.status(400).json({ mensaje: 'La unidad y la clase deben ser identificadores válidos' });
+  }
+
+  const esUnoMismo = usuarioId === req.auth.userId;
+  if (esUnoMismo && ((body.rol !== undefined && body.rol !== req.auth.rol) || body.estado === 'INACTIVO')) {
+    return res.status(409).json({ mensaje: 'No podés cambiar tu propio rol ni darte de baja' });
+  }
+
+  let conexion;
+  let transaccion = false;
+  try {
+    conexion = await pool.getConnection();
+    await conexion.beginTransaction();
+    transaccion = true;
+
+    const [usuarios] = await conexion.execute('SELECT id FROM usuarios WHERE id = ? FOR UPDATE', [usuarioId]);
+    if (usuarios.length === 0) throw crearError(404, 'No encontramos ese usuario');
+
+    if (unidadId) {
+      const [unidades] = await conexion.execute('SELECT id FROM unidades WHERE id = ?', [unidadId]);
+      if (unidades.length === 0) throw crearError(400, 'La unidad elegida no existe');
+    }
+    if (claseId) {
+      const [clases] = await conexion.execute('SELECT id FROM clases WHERE id = ?', [claseId]);
+      if (clases.length === 0) throw crearError(400, 'La clase elegida no existe');
+    }
+
+    const cambios = [];
+    const valores = [];
+    if (body.rol !== undefined) { cambios.push('rol = ?'); valores.push(body.rol); }
+    if (unidadId !== undefined) { cambios.push('unidad_id = ?'); valores.push(unidadId); }
+    if (claseId !== undefined) { cambios.push('clase_actual_id = ?'); valores.push(claseId); }
+    if (body.estado !== undefined) { cambios.push('estado = ?'); valores.push(body.estado); }
+    await conexion.execute(`UPDATE usuarios SET ${cambios.join(', ')} WHERE id = ?`, [...valores, usuarioId]);
+
+    if (body.estado === 'INACTIVO') {
+      await conexion.execute(
+        'UPDATE sesiones SET revocada_en = UTC_TIMESTAMP(3) WHERE usuario_id = ? AND revocada_en IS NULL',
+        [usuarioId]
+      );
+    }
+
+    const [actualizado] = await conexion.execute(`${CONSULTA_USUARIOS} WHERE u.id = ?`, [usuarioId]);
+    await conexion.commit();
+    transaccion = false;
+    return res.json({ mensaje: 'Usuario actualizado', usuario: usuarioPublico(actualizado[0]) });
+  } catch (error) {
+    if (conexion && transaccion) await conexion.rollback().catch(() => {});
+    if (error.status) return res.status(error.status).json({ mensaje: error.message });
+    console.error('Error en PATCH /api/director/usuarios/:id:', error);
+    return res.status(500).json({ mensaje: 'Error interno del servidor' });
+  } finally {
+    if (conexion) conexion.release();
+  }
+};
+
+/**
+ * DELETE /api/director/usuarios/:id
+ * Da de baja a un integrante (queda INACTIVO, no se borran sus datos).
+ */
+const darDeBajaUsuario = (req, res) => {
+  req.body = { estado: 'INACTIVO' };
+  return editarUsuario(req, res);
+};
+
+module.exports = {
+  listarSolicitudes,
+  obtenerCatalogo,
+  responderSolicitud,
+  obtenerMetricas,
+  listarUsuarios,
+  editarUsuario,
+  darDeBajaUsuario
+};
