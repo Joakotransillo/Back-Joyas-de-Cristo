@@ -12,6 +12,7 @@ const consejeroRoutes = require('./routes/consejeroRoutes');
 const especialidadesRoutes = require('./routes/especialidadesRoutes');
 const consejeroCuadernilloRoutes = require('./routes/consejeroCuadernilloRoutes');
 const directorRoutes = require('./routes/directorRoutes');
+const asistenciaRoutes = require('./routes/asistenciaRoutes');
 
 const app = express();
 app.use(cors());
@@ -26,6 +27,7 @@ app.use('/api/conquis', conquisRoutes);
 app.use('/api/consejero', consejeroRoutes);
 app.use('/api/consejero', consejeroCuadernilloRoutes);
 app.use('/api/director', directorRoutes);
+app.use('/api/secretaria', asistenciaRoutes);
 app.use('/api/especialidades', especialidadesRoutes);
 
 const PORT = process.env.PORT || 5000;
