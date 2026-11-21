@@ -173,11 +173,13 @@ CREATE TABLE asistencia (
     id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     usuario_id INT,
     fecha DATE NOT NULL,
+    presente BOOLEAN NOT NULL DEFAULT FALSE,
     puntualidad BOOLEAN NOT NULL DEFAULT FALSE,
     biblia BOOLEAN NOT NULL DEFAULT FALSE,
     uniforme BOOLEAN NOT NULL DEFAULT FALSE,
     cuota BOOLEAN NOT NULL DEFAULT FALSE,
     registrado_por INT,
+    registrado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_asistencia_usuario_fecha (usuario_id, fecha),
     CONSTRAINT fk_asistencia_usuario
       FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
