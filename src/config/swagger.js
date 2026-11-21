@@ -63,10 +63,109 @@ const swaggerDocument = {
       delete: { tags: ['Autenticación'], summary: 'Cerrar sesión', responses: { 200: { description: 'OK' } } }
     },
     '/conquis/inicio': {
-      get: { tags: ['Conquistadores'], summary: 'Tablón de inicio y progreso', responses: { 200: { description: 'OK' } } }
+      get: {
+        tags: ['Conquistadores'],
+        summary: 'Consultar el resumen del conquistador',
+        description: 'Devuelve el perfil, el avance global de la clase, los próximos eventos publicados para su unidad o para todo el club y los anuncios de su consejero de unidad.',
+        responses: {
+          200: {
+            description: 'Resumen del conquistador',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    perfil: { type: 'object' },
+                    avance_clase: {
+                      type: 'object',
+                      properties: {
+                        requisitos_completados: { type: 'integer' },
+                        total_requisitos: { type: 'integer' },
+                        porcentaje: { type: 'integer', minimum: 0, maximum: 100 }
+                      }
+                    },
+                    proximos_eventos: { type: 'array', items: { type: 'object' } },
+                    anuncios: { type: 'array', items: { type: 'object' } }
+                  }
+                }
+              }
+            }
+          },
+          401: { description: 'Falta un token válido o la sesión está vencida' },
+          403: { description: 'El usuario no tiene el rol de conquistador' },
+          404: { description: 'No se encontró el usuario autenticado' },
+          500: { description: 'Error interno del servidor' }
+        }
+      }
     },
     '/conquis/cuadernillo': {
-      get: { tags: ['Conquistadores'], summary: 'Ver cuadernillo', responses: { 200: { description: 'OK' } } }
+      get: {
+        tags: ['Conquistadores'],
+        summary: 'Consultar los cuadernillos de la clase actual',
+        description: 'Devuelve las categorías y requisitos de los cuadernillos Regular y Avanzado, junto con el estado de firma del conquistador autenticado.',
+        responses: {
+          200: {
+            description: 'Cuadernillos y progreso del conquistador',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    clase: {
+                      type: 'object',
+                      properties: {
+                        id: { type: 'integer' },
+                        nombre: { type: 'string' },
+                        color_insignia: { type: 'string', nullable: true }
+                      }
+                    },
+                    cuadernillos: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          id: { type: 'integer' },
+                          tipo: { type: 'string', enum: ['REGULAR', 'AVANZADA'] },
+                          categorias: {
+                            type: 'array',
+                            items: {
+                              type: 'object',
+                              properties: {
+                                id: { type: 'integer' },
+                                nombre: { type: 'string' },
+                                orden: { type: 'integer' },
+                                requisitos: {
+                                  type: 'array',
+                                  items: {
+                                    type: 'object',
+                                    properties: {
+                                      id: { type: 'integer' },
+                                      numero_item: { type: 'integer' },
+                                      descripcion: { type: 'string' },
+                                      completado: { type: 'boolean' },
+                                      firmado: { type: 'boolean' },
+                                      fecha_firma: { type: 'string', nullable: true }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          401: { description: 'Falta un token válido o la sesión está vencida' },
+          403: { description: 'El usuario no tiene el rol de conquistador' },
+          404: { description: 'No se encontró el usuario o los cuadernillos de su clase' },
+          409: { description: 'El usuario no tiene una clase asignada' },
+          500: { description: 'Error interno del servidor' }
+        }
+      }
     },
     '/conquis/especialidades': {
       get: { tags: ['Conquistadores'], summary: 'Ver especialidades', responses: { 200: { description: 'OK' } } }

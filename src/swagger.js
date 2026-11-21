@@ -125,6 +125,58 @@ const swaggerDocument = {
           500: { description: 'Error interno del servidor' }
         }
       }
+    },
+    '/api/consejero/mi-unidad': {
+      get: {
+        summary: 'Listar los conquistadores de la unidad del consejero y su avance',
+        tags: ['Consejeros'],
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: {
+            description: 'Unidad asignada y lista de conquistadores con su porcentaje de avance',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    unidad: {
+                      type: 'object',
+                      properties: {
+                        id: { type: 'integer' },
+                        nombre: { type: 'string' }
+                      }
+                    },
+                    conquistadores: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          id: { type: 'integer' },
+                          nombre_completo: { type: 'string' },
+                          clase: { type: 'object', nullable: true },
+                          avance: {
+                            type: 'object',
+                            properties: {
+                              requisitos_completados: { type: 'integer' },
+                              total_requisitos: { type: 'integer' },
+                              porcentaje: { type: 'integer', minimum: 0, maximum: 100 }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          401: { description: 'Falta un token válido o la sesión está vencida' },
+          403: { description: 'El usuario no tiene el rol de consejero' },
+          404: { description: 'No se encontró el consejero autenticado' },
+          409: { description: 'El consejero no tiene una unidad asignada' },
+          500: { description: 'Error interno del servidor' }
+        }
+      }
     }
   }
 };
