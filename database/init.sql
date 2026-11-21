@@ -97,6 +97,7 @@ CREATE TABLE solicitudes_registro (
     clase_sugerida_id INT,
     unidad_sugerida_id INT,
     estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE',
+    fecha_solicitud TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_solicitudes_registro_email (email),
     CONSTRAINT fk_solicitudes_clase
       FOREIGN KEY (clase_sugerida_id) REFERENCES clases(id),
